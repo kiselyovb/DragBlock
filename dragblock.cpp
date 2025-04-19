@@ -5,24 +5,26 @@
 #include <chrono>
 #include "MinHook.h"
 
-typedef HRESULT (WINAPI* PFN_DoDragDrop)(
+typedef HRESULT(WINAPI* PFN_DoDragDrop)(
     IDataObject*, IDropSource*, DWORD, DWORD*);
 static PFN_DoDragDrop RealDoDragDrop = nullptr;
 
 // --- Настройки логирования ---
-#define LOG_ENABLED true     // основной режим (старт/стоп/ошибки)
-#define DEBUG_MODE  true     // режим отладки
+DWORD g_LogLevel = 1; // 0 = отключено, 1 = обычный режим, 2 = отладка
 
 enum LogLevel { LOG_INFO, LOG_ERROR, LOG_DEBUG };
 
 // --- Логирование в системный журнал ---
 void LogEvent(LogLevel level, const wchar_t* message)
 {
+    if (g_LogLevel == 0) return;
+
     WORD type;
     switch (level) {
-        case LOG_INFO:  type = EVENTLOG_INFORMATION_TYPE; break;
-        case LOG_ERROR: type = EVENTLOG_ERROR_TYPE; break;
-        case LOG_DEBUG: type = EVENTLOG_INFORMATION_TYPE; break;
+    case LOG_INFO:  type = EVENTLOG_INFORMATION_TYPE; break;
+    case LOG_ERROR: type = EVENTLOG_ERROR_TYPE; break;
+    case LOG_DEBUG: type = EVENTLOG_INFORMATION_TYPE; break;
+    default:        type = EVENTLOG_INFORMATION_TYPE; break;
     }
 
     HANDLE hEventLog = RegisterEventSourceW(NULL, L"DragBlock");
@@ -33,19 +35,19 @@ void LogEvent(LogLevel level, const wchar_t* message)
     }
 }
 
-#define LOG(msg)     if (LOG_ENABLED) LogEvent(LOG_INFO, msg)
-#define LOG_ERR(msg) if (LOG_ENABLED) LogEvent(LOG_ERROR, msg)
-#define LOG_DBG(msg) if (DEBUG_MODE)  LogEvent(LOG_DEBUG, msg)
+#define LOG(msg)     if (g_LogLevel >= 1) LogEvent(LOG_INFO, msg)
+#define LOG_ERR(msg) if (g_LogLevel >= 1) LogEvent(LOG_ERROR, msg)
+#define LOG_DBG(msg) if (g_LogLevel >= 2) LogEvent(LOG_DEBUG, msg)
 
-// --- Измерение времени выполнения блока ---
 #define LOG_TIMED_FUNCTION(name, block)                            \
 {                                                                  \
-    using namespace std::chrono;                                   \
-    auto __start = high_resolution_clock::now();                   \
-    block                                                          \
-    auto __end = high_resolution_clock::now();                     \
-    auto __elapsed = duration_cast<milliseconds>(__end - __start); \
-    if (DEBUG_MODE) {                                              \
+    if (g_LogLevel < 2) { block }                                  \
+    else {                                                         \
+        using namespace std::chrono;                               \
+        auto __start = high_resolution_clock::now();               \
+        block                                                      \
+        auto __end = high_resolution_clock::now();                 \
+        auto __elapsed = duration_cast<milliseconds>(__end - __start); \
         wchar_t buffer[256];                                       \
         swprintf(buffer, 256, L"%s executed in %lld ms",           \
                  name, __elapsed.count());                         \
@@ -53,7 +55,7 @@ void LogEvent(LogLevel level, const wchar_t* message)
     }                                                              \
 }
 
-// --- Проверка, содержит ли IDataObject текст ---
+// --- Проверка на наличие текста ---
 static bool HasText(IDataObject* obj)
 {
     FORMATETC fmt = { 0, nullptr, DVASPECT_CONTENT, -1, TYMED_HGLOBAL };
@@ -66,7 +68,7 @@ static bool HasText(IDataObject* obj)
     return obj->QueryGetData(&fmt) == S_OK;
 }
 
-// --- Хук ---
+// --- Хук DoDragDrop ---
 static HRESULT WINAPI HookDoDragDrop(
     IDataObject* pObj, IDropSource* pSrc,
     DWORD okEff, DWORD* pEff)
@@ -76,7 +78,7 @@ static HRESULT WINAPI HookDoDragDrop(
     bool cancel = false;
     LOG_TIMED_FUNCTION(L"HasText", {
         cancel = (pObj && HasText(pObj));
-    });
+        });
 
     if (cancel) {
         if (pEff) *pEff = DROPEFFECT_NONE;
@@ -87,7 +89,7 @@ static HRESULT WINAPI HookDoDragDrop(
     return RealDoDragDrop(pObj, pSrc, okEff, pEff);
 }
 
-// --- Регистрация источника событий (однократно) ---
+// --- Регистрация источника событий ---
 void RegisterEventSourceIfNeeded()
 {
     HKEY hKey;
@@ -100,11 +102,26 @@ void RegisterEventSourceIfNeeded()
     }
 }
 
+// --- Загрузка уровня логирования из реестра ---
+void LoadLogLevelFromRegistry()
+{
+    HKEY hKey;
+    DWORD value = 1;
+    DWORD size = sizeof(value);
+    if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, L"SOFTWARE\\DragBlock", 0, KEY_READ, &hKey) == ERROR_SUCCESS) {
+        if (RegQueryValueExW(hKey, L"LogLevel", NULL, NULL, (LPBYTE)&value, &size) == ERROR_SUCCESS) {
+            g_LogLevel = value;
+        }
+        RegCloseKey(hKey);
+    }
+}
+
 // --- DllMain ---
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID)
 {
     if (reason == DLL_PROCESS_ATTACH) {
         RegisterEventSourceIfNeeded();
+        LoadLogLevelFromRegistry();
         LOG(L"DragBlock started");
 
         if (MH_Initialize() != MH_OK) {
@@ -123,10 +140,12 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID)
             return FALSE;
         }
 
-    } else if (reason == DLL_PROCESS_DETACH) {
+    }
+    else if (reason == DLL_PROCESS_DETACH) {
         MH_DisableHook(MH_ALL_HOOKS);
         MH_Uninitialize();
         LOG(L"DragBlock stopped");
     }
+
     return TRUE;
 }
