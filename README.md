@@ -101,3 +101,21 @@ MIT License (если используется MinHook — он распрост
 ## Авторы и вдохновение
 
 Разработка основана на изучении структуры Windows Drag & Drop (OLE), MinHook, и практик защиты данных на уровне API и ошибки при эксплуатации ПО Perimetrix.
+
+## Генерауия самоподписанного (локального) сертификата
+Генерация сертификата
+New-SelfSignedCertificate -Type CodeSigningCert -Subject "CN=Test DragBlock" -CertStoreLocation "Cert:\\CurrentUser\\My"
+  
+После этого сертификат появится в: certmgr.msc → Личное → Сертификаты → "Test DragBlock"
+Копируй его в: Доверенные корневые центры сертификации → Сертификаты
+
+Подписываем DLL
+.\signtool.exe sign /n "Test DragBlock" /fd SHA256 /td SHA256 /tr http://timestamp.digicert.com "C:\Users\kisel\source\DragBlock\x64\Release\DragBlock.x64.dll"
+
+Проверка подписи
+.\signtool.exe verify /pa /v "C:\Users\kisel\source\DragBlock\x64\Release\DragBlock.x64.dll"
+
+## Проверка работоспособности решения
+Запускаем notepad PowerShell
+Start-Process "$env:windir\\System32\\notepad.exe"
+вводим текст, выделяем и переносим в другой редактор -> перенос не должен происходить
