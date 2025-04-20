@@ -1,0 +1,5 @@
+Windows Registry Editor Version 5.00
+[HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Windows]
+"LoadAppInit_DLLs"=dword:00000001
+"AppInit_DLLs"="C:\\Users\\kisel\\source\\DragBlock\\x64\\Release\\DragBlock.x64.dll"
+"RequireSignedAppInit_DLLs"=dword:00000000

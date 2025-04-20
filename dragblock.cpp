@@ -120,6 +120,8 @@ void LoadLogLevelFromRegistry()
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID)
 {
     if (reason == DLL_PROCESS_ATTACH) {
+        MessageBoxW(NULL, L"DragBlock DLL loaded", L"DragBlock", MB_OK); // ← Уведомление при загрузке
+
         RegisterEventSourceIfNeeded();
         LoadLogLevelFromRegistry();
         LOG(L"DragBlock started");
@@ -145,6 +147,8 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID)
         MH_DisableHook(MH_ALL_HOOKS);
         MH_Uninitialize();
         LOG(L"DragBlock stopped");
+
+        MessageBoxW(NULL, L"DragBlock DLL unloaded", L"DragBlock", MB_OK); // ← Уведомление при выгрузке
     }
 
     return TRUE;
