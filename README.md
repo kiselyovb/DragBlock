@@ -122,3 +122,7 @@ cd "C:\Program Files (x86)\Microsoft SDKs\ClickOnce\SignTool"
 Запускаем notepad PowerShell
 Start-Process "$env:windir\\System32\\notepad.exe"
 вводим текст, выделяем и переносим в другой редактор -> перенос не должен происходить
+
+## Вспомогательные программы
+https://securityxploded.com/remotedll.php
+https://learn.microsoft.com/sysinternals/downloads/process-explorer
