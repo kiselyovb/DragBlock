@@ -73,7 +73,7 @@
 ```reg
 [HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Windows]
 "LoadAppInit_DLLs"=dword:00000001
-"AppInit_DLLs"="C:\\Path\\To\\DragBlock.64.dll"
+"AppInit_DLLs"="C:\\Users\\kisel\\source\\DragBlock\\x64\\Release\\DragBlock.x64.dll"
 "RequireSignedAppInit_DLLs"=dword:00000000
 ```
 
@@ -85,8 +85,8 @@
 
 | Платформа | Имя DLL             | Путь             |
 |-----------|---------------------|------------------|
-| x64       | `DragBlock.64.dll` | `x64\Release\` |
-| x86       | `DragBlock.32.dll` | `Release\`      |
+| x64       | `DragBlock.x64.dll` | `x64\Release\` |
+| x86       | `DragBlock.x32.dll` | `x32\Release\`      |
 
 ## Ограничения
 
@@ -100,16 +100,19 @@ MIT License (если используется MinHook — он распрост
 
 ## Авторы и вдохновение
 
-Разработка основана на изучении структуры Windows Drag & Drop (OLE), MinHook, и практик защиты данных на уровне API и ошибки при эксплуатации ПО Perimetrix.
+Ошибки при эксплуатации ПО Perimetrix
+Разработка основана на изучении структуры Windows Drag & Drop (OLE), MinHook, и практик защиты данных на уровне API
 
 ## Генерауия самоподписанного (локального) сертификата
 Генерация сертификата
+PowerShell
 New-SelfSignedCertificate -Type CodeSigningCert -Subject "CN=Test DragBlock" -CertStoreLocation "Cert:\\CurrentUser\\My"
   
 После этого сертификат появится в: certmgr.msc → Личное → Сертификаты → "Test DragBlock"
-Копируй его в: Доверенные корневые центры сертификации → Сертификаты
+Скопируй его в: Доверенные корневые центры сертификации → Сертификаты
 
 Подписываем DLL
+cd "C:\Program Files (x86)\Microsoft SDKs\ClickOnce\SignTool"
 .\signtool.exe sign /n "Test DragBlock" /fd SHA256 /td SHA256 /tr http://timestamp.digicert.com "C:\Users\kisel\source\DragBlock\x64\Release\DragBlock.x64.dll"
 
 Проверка подписи
