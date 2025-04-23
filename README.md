@@ -22,6 +22,10 @@
 
 ##  Сборка
 
+Добавить путь к MinHook.h -Configuration Properties → C/C++ → General → Additional Include Directories
+Добавить MinHook.x64.lib -Configuration Properties → Linker → Input → Additional Dependencies
+Добавить путь к libMinHook.x86.lib -Configuration Properties → Linker → General → Additional Library Directories
+
 ### Требования
 
 - Visual Studio 2022 с рабочей нагрузкой **Desktop development with C++**
@@ -123,6 +127,26 @@ cd "C:\Program Files (x86)\Microsoft SDKs\ClickOnce\SignTool"
 Start-Process "$env:windir\\System32\\notepad.exe"
 вводим текст, выделяем и переносим в другой редактор -> перенос не должен происходить
 
+Разовая загрузка OS без проверки подписей
+	Нажми Win + R → введи
+		shutdown /r /o /f /t 0
+	После перезагрузки выбери: Поиск и устранение неисправностей
+		→ Дополнительные параметры
+		→ Параметры загрузки
+		→ Перезагрузить
+	После второй перезагрузки:
+		Нажми клавишу 7 или F7 —Отключить обязательную проверку подписи драйверов
+Постоянное отключение, запуск cmd.exe от имени администратора
+	Выключить:
+		bcdedit /set nointegritychecks on
+		bcdedit /set testsigning on
+	Включить:
+		bcdedit /set nointegritychecks off
+		bcdedit /set testsigning off
+
+
+
 ## Вспомогательные программы
 https://securityxploded.com/remotedll.php
 https://learn.microsoft.com/sysinternals/downloads/process-explorer
+https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist?view=msvc-170#latest-microsoft-visual-c-redistributable-version

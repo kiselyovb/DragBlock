@@ -1,43 +1,67 @@
-﻿// dragblock.cpp –  консольная DLL c глобальным хуком
+﻿// dragblock.cpp – консольная DLL c глобальным хуком и логированием в файл по имени DLL
 #include "pch.h"
 #include <Windows.h>
 #include <Ole2.h>
 #include <chrono>
+#include <fstream>
 #include "MinHook.h"
 
-typedef HRESULT(WINAPI* PFN_DoDragDrop)(
-    IDataObject*, IDropSource*, DWORD, DWORD*);
+typedef HRESULT(WINAPI* PFN_DoDragDrop)(IDataObject*, IDropSource*, DWORD, DWORD*);
 static PFN_DoDragDrop RealDoDragDrop = nullptr;
 
-// --- Настройки логирования ---
 DWORD g_LogLevel = 1; // 0 = отключено, 1 = обычный режим, 2 = отладка
+std::wstring g_logFile;
 
 enum LogLevel { LOG_INFO, LOG_ERROR, LOG_DEBUG };
 
-// --- Логирование в системный журнал ---
-void LogEvent(LogLevel level, const wchar_t* message)
-{
-    if (g_LogLevel == 0) return;
+// --- Логирование в текстовый файл ---
+void InitLogFileName(HMODULE hModule) {
+    wchar_t path[MAX_PATH];
+    if (GetModuleFileNameW(hModule, path, MAX_PATH)) {
+        std::wstring full(path); // полный путь к DLL или EXE
+        size_t lastSlash = full.find_last_of(L"\\/");
+        size_t lastDot = full.find_last_of(L".");
+        std::wstring baseName = (lastSlash != std::wstring::npos && lastDot != std::wstring::npos && lastDot > lastSlash)
+            ? full.substr(lastSlash + 1, lastDot - lastSlash - 1)
+            : L"DragBlock";
 
-    WORD type;
-    switch (level) {
-    case LOG_INFO:  type = EVENTLOG_INFORMATION_TYPE; break;
-    case LOG_ERROR: type = EVENTLOG_ERROR_TYPE; break;
-    case LOG_DEBUG: type = EVENTLOG_INFORMATION_TYPE; break;
-    default:        type = EVENTLOG_INFORMATION_TYPE; break;
+        std::wstring directory = (lastSlash != std::wstring::npos)
+            ? full.substr(0, lastSlash + 1)
+            : L"";
+
+        g_logFile = directory + baseName + L".log";
+
+        std::wofstream out(g_logFile, std::ios::app);
+        if (out.is_open()) {
+            SYSTEMTIME st; GetLocalTime(&st);
+            out << st.wYear << L"-" << st.wMonth << L"-" << st.wDay << L" "
+                << st.wHour << L":" << st.wMinute << L":" << st.wSecond << L" [INF] "
+                << L"Logging to: " << g_logFile << std::endl;
+        }
     }
-
-    HANDLE hEventLog = RegisterEventSourceW(NULL, L"DragBlock");
-    if (hEventLog) {
-        LPCWSTR strings[1] = { message };
-        ReportEventW(hEventLog, type, 0, 0, NULL, 1, 0, strings, NULL);
-        DeregisterEventSource(hEventLog);
+    else {
+        g_logFile = L"DragBlock.log"; // fallback
     }
 }
 
-#define LOG(msg)     if (g_LogLevel >= 1) LogEvent(LOG_INFO, msg)
-#define LOG_ERR(msg) if (g_LogLevel >= 1) LogEvent(LOG_ERROR, msg)
-#define LOG_DBG(msg) if (g_LogLevel >= 2) LogEvent(LOG_DEBUG, msg)
+void LogToFile(LogLevel level, const wchar_t* message) {
+    if (g_LogLevel == 0) return;
+
+    const wchar_t* prefix = (level == LOG_ERROR) ? L"[ERR] " :
+        (level == LOG_DEBUG) ? L"[DBG] " : L"[INF] ";
+
+    std::wofstream out(g_logFile, std::ios::app);
+    if (out.is_open()) {
+        SYSTEMTIME st; GetLocalTime(&st);
+        out << st.wYear << L"-" << st.wMonth << L"-" << st.wDay << L" "
+            << st.wHour << L":" << st.wMinute << L":" << st.wSecond << L" "
+            << prefix << message << std::endl;
+    }
+}
+
+#define LOG(msg)     if (g_LogLevel >= 1) LogToFile(LOG_INFO, msg)
+#define LOG_ERR(msg) if (g_LogLevel >= 1) LogToFile(LOG_ERROR, msg)
+#define LOG_DBG(msg) if (g_LogLevel >= 2) LogToFile(LOG_DEBUG, msg)
 
 #define LOG_TIMED_FUNCTION(name, block)                            \
 {                                                                  \
@@ -51,78 +75,55 @@ void LogEvent(LogLevel level, const wchar_t* message)
         wchar_t buffer[256];                                       \
         swprintf(buffer, 256, L"%s executed in %lld ms",           \
                  name, __elapsed.count());                         \
-        LogEvent(LOG_DEBUG, buffer);                               \
+        LogToFile(LOG_DEBUG, buffer);                              \
     }                                                              \
 }
 
-// --- Проверка на наличие текста ---
-static bool HasText(IDataObject* obj)
-{
+static bool HasText(IDataObject* obj) {
     FORMATETC fmt = { 0, nullptr, DVASPECT_CONTENT, -1, TYMED_HGLOBAL };
-
     fmt.cfFormat = CF_UNICODETEXT;
     if (obj->QueryGetData(&fmt) == S_OK)
         return true;
-
     fmt.cfFormat = CF_TEXT;
     return obj->QueryGetData(&fmt) == S_OK;
 }
 
-// --- Хук DoDragDrop ---
-static HRESULT WINAPI HookDoDragDrop(
-    IDataObject* pObj, IDropSource* pSrc,
-    DWORD okEff, DWORD* pEff)
-{
+static HRESULT WINAPI HookDoDragDrop(IDataObject* pObj, IDropSource* pSrc, DWORD okEff, DWORD* pEff) {
     LOG_DBG(L"Entered HookDoDragDrop");
-
     bool cancel = false;
     LOG_TIMED_FUNCTION(L"HasText", {
         cancel = (pObj && HasText(pObj));
         });
-
     if (cancel) {
         if (pEff) *pEff = DROPEFFECT_NONE;
         LOG(L"Drag operation cancelled due to protected text content");
         return DRAGDROP_S_CANCEL;
     }
-
     return RealDoDragDrop(pObj, pSrc, okEff, pEff);
 }
 
-// --- Регистрация источника событий ---
-void RegisterEventSourceIfNeeded()
-{
-    HKEY hKey;
-    LPCWSTR path = L"SYSTEM\\CurrentControlSet\\Services\\EventLog\\Application\\DragBlock";
-    if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, path, 0, KEY_READ, &hKey) != ERROR_SUCCESS) {
-        RegCreateKeyW(HKEY_LOCAL_MACHINE, path, &hKey);
-        DWORD types = EVENTLOG_ERROR_TYPE | EVENTLOG_WARNING_TYPE | EVENTLOG_INFORMATION_TYPE;
-        RegSetValueExW(hKey, L"TypesSupported", 0, REG_DWORD, (BYTE*)&types, sizeof(DWORD));
-        RegCloseKey(hKey);
-    }
-}
-
-// --- Загрузка уровня логирования из реестра ---
-void LoadLogLevelFromRegistry()
-{
+void LoadLogLevelFromRegistry() {
     HKEY hKey;
     DWORD value = 1;
     DWORD size = sizeof(value);
     if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, L"SOFTWARE\\DragBlock", 0, KEY_READ, &hKey) == ERROR_SUCCESS) {
         if (RegQueryValueExW(hKey, L"LogLevel", NULL, NULL, (LPBYTE)&value, &size) == ERROR_SUCCESS) {
             g_LogLevel = value;
+            LOG(L"LogLevel loaded from registry");
+        }
+        else {
+            LOG_ERR(L"LogLevel not found in registry — using default");
         }
         RegCloseKey(hKey);
     }
+    else {
+        LOG_ERR(L"Registry key SOFTWARE\\DragBlock not found — using default log level");
+    }
 }
 
-// --- DllMain ---
-BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID)
-{
+BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID) {
     if (reason == DLL_PROCESS_ATTACH) {
-        MessageBoxW(NULL, L"DragBlock DLL loaded", L"DragBlock", MB_OK); // ← Уведомление при загрузке
-
-        RegisterEventSourceIfNeeded();
+        InitLogFileName(hModule);
         LoadLogLevelFromRegistry();
         LOG(L"DragBlock started");
 
@@ -130,26 +131,20 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID)
             LOG_ERR(L"MinHook initialization failed");
             return FALSE;
         }
-
         if (MH_CreateHookApi(L"ole32.dll", "DoDragDrop",
             HookDoDragDrop, reinterpret_cast<void**>(&RealDoDragDrop)) != MH_OK) {
             LOG_ERR(L"Failed to hook DoDragDrop");
             return FALSE;
         }
-
         if (MH_EnableHook(MH_ALL_HOOKS) != MH_OK) {
             LOG_ERR(L"Failed to enable hooks");
             return FALSE;
         }
-
     }
     else if (reason == DLL_PROCESS_DETACH) {
         MH_DisableHook(MH_ALL_HOOKS);
         MH_Uninitialize();
         LOG(L"DragBlock stopped");
-
-        MessageBoxW(NULL, L"DragBlock DLL unloaded", L"DragBlock", MB_OK); // ← Уведомление при выгрузке
     }
-
     return TRUE;
 }
