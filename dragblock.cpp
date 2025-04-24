@@ -127,19 +127,42 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID) {
         LoadLogLevelFromRegistry();
         LOG(L"DragBlock started");
 
+        if (!GetModuleHandleW(L"ole32.dll")) {
+            LOG_DBG(L"ole32.dll not loaded yet — loading manually");
+            LoadLibraryW(L"ole32.dll");
+        }
+
         if (MH_Initialize() != MH_OK) {
             LOG_ERR(L"MinHook initialization failed");
             return FALSE;
         }
+<<<<<<< HEAD
+
+        MH_STATUS hookStatus = MH_CreateHookApi(
+            L"ole32.dll", "DoDragDrop",
+            HookDoDragDrop, reinterpret_cast<void**>(&RealDoDragDrop));
+
+        if (hookStatus != MH_OK) {
+            wchar_t msg[128];
+            swprintf(msg, 128, L"Failed to hook DoDragDrop: MH_STATUS = %d", hookStatus);
+            LOG_ERR(msg);
+=======
         if (MH_CreateHookApi(L"ole32.dll", "DoDragDrop",
             HookDoDragDrop, reinterpret_cast<void**>(&RealDoDragDrop)) != MH_OK) {
             LOG_ERR(L"Failed to hook DoDragDrop");
+>>>>>>> 63f1b3e50a89fefc8929d03a4a0b59ed6c8f984d
             return FALSE;
         }
         if (MH_EnableHook(MH_ALL_HOOKS) != MH_OK) {
             LOG_ERR(L"Failed to enable hooks");
             return FALSE;
         }
+<<<<<<< HEAD
+
+        LOG(L"DoDragDrop hook installed successfully");
+
+=======
+>>>>>>> 63f1b3e50a89fefc8929d03a4a0b59ed6c8f984d
     }
     else if (reason == DLL_PROCESS_DETACH) {
         MH_DisableHook(MH_ALL_HOOKS);
